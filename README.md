@@ -49,6 +49,38 @@ To run the test suite (unit tests for ML models and FastAPI endpoints):
 python -m pytest -v
 ```
 
+Frontend budget logic (monthly limits, thresholds, export shape) is covered by
+Node's built-in test runner — no dependencies needed:
+```bash
+node --test tests/budget_logic.test.js
+```
+
+---
+
+## Setting monthly limits
+
+Each category can have an optional monthly spending limit, stored privately in
+your browser's IndexedDB (nothing leaves your device).
+
+1. In the **Monthly Budgets** card, pick a category (or type a new one) and
+   enter a limit greater than $0, then click **Save limit**.
+   - Tip: the **Category Breakdown** chart also has a **Set limit** button on
+     every category without a limit.
+2. The breakdown shows `$spent / $limit (pct%)` for the current calendar
+   month, with a progress bar:
+   - Below 80%: green bar, `✓ On track`.
+   - 80%–99%: amber bar, `⚠ Approaching limit`.
+   - 100% and above: red bar, `⛔ Over budget`.
+   - Status is always shown with an icon plus text, never color alone.
+3. Limits reset automatically on the 1st of each month — only transactions
+   dated in the current month count toward the bar.
+4. Recording a transaction that pushes a category over its limit shows a
+   dismissible warning banner at the top of the page.
+5. **Edit** a limit via the Monthly Budgets list or the chart row; **Remove**
+   it to return that category to the default share-of-total bar.
+6. **Export data (JSON)** downloads transactions *and* limits together;
+   **Import data** restores both (entries are merged, existing data is kept).
+
 ---
 
 ## Contributing
