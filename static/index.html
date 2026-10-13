@@ -51,6 +51,10 @@
         </header>
 
         <main>
+            <div id="budget-alert" class="alert-banner" role="alert" hidden>
+                <span id="budget-alert-text"></span>
+                <button id="budget-alert-dismiss" class="btn-small" aria-label="Dismiss budget alert">Dismiss</button>
+            </div>
             <section class="card input-card">
                 <h2>Add Transaction</h2>
                 <form id="transaction-form">
@@ -93,6 +97,55 @@
                 <div id="budget-advice" class="advice-box" style="margin-top: 1rem;">Add transactions to receive AI budget suggestions.</div>
             </section>
 
+            <section class="card budget-card">
+                <h2>Monthly Budgets</h2>
+                <p class="card-hint">Set an optional monthly spending limit per category. Progress resets on the 1st of each month.</p>
+                <form id="budget-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="budget-category">Category</label>
+                            <input type="text" id="budget-category" list="category-options" placeholder="e.g., Groceries" required autocomplete="off">
+                            <datalist id="category-options"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="budget-limit">Monthly limit ($)</label>
+                            <input type="number" id="budget-limit" step="0.01" min="0.01" placeholder="0.00" required>
+                        </div>
+                    </div>
+                    <p id="budget-form-error" class="form-error" role="alert"></p>
+                    <div class="budget-form-actions">
+                        <button type="submit" id="budget-submit" class="btn-primary">Save limit</button>
+                        <button type="button" id="budget-cancel" class="btn-small" hidden>Cancel</button>
+                    </div>
+                </form>
+                <div id="budget-list" class="budget-list">
+                    <p class="empty-state">No monthly limits yet.</p>
+                </div>
+            </section>
+
+            <section class="card backup-card">
+                <h2>Backup &amp; Restore</h2>
+                <p class="card-hint">Everything runs in your browser — exports download as files, nothing is sent to any server.</p>
+                <div class="backup-row">
+                    <button id="export-btn" class="btn-small">Export JSON</button>
+                    <button id="export-csv-btn" class="btn-small">Export CSV</button>
+                    <label class="btn-small" for="import-input" role="button" tabindex="0">Import JSON…</label>
+                    <input type="file" id="import-input" accept="application/json,.json" hidden>
+                </div>
+                <div id="import-pending" class="import-panel" hidden>
+                    <p id="import-summary" class="card-hint"></p>
+                    <div class="radio-row" role="radiogroup" aria-label="Import mode">
+                        <label><input type="radio" name="import-mode" value="merge" checked> Merge (skip exact duplicates)</label>
+                        <label><input type="radio" name="import-mode" value="replace"> Replace all existing data</label>
+                    </div>
+                    <div class="backup-row">
+                        <button id="import-confirm" class="btn-small">Confirm import</button>
+                        <button id="import-cancel" class="btn-small btn-danger-ghost">Cancel</button>
+                    </div>
+                </div>
+                <p id="import-status" class="status-line" role="status"></p>
+            </section>
+
             <section class="card list-card">
                 <h2>Transactions</h2>
                 <div id="transaction-list" class="transaction-list">
@@ -102,6 +155,7 @@
         </main>
     </div>
 
+    <script src="budget-logic.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

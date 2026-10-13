@@ -10,6 +10,7 @@
     --accent-border: rgba(16, 185, 129, 0.3);
     --border: #27272a;
     --danger: #ef4444;
+    --warning: #f59e0b;
     --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
     --badge-bg: #27272a;
     --track-bg: #27272a;
@@ -30,6 +31,7 @@
     --accent-border: rgba(4, 120, 87, 0.25);
     --border: #e2e4e9;
     --danger: #dc2626;
+    --warning: #b45309;
     --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
     --badge-bg: #e5e7eb;
     --track-bg: #e5e7eb;
@@ -356,4 +358,202 @@ input:focus {
         transition-duration: 0.01ms !important;
         animation-duration: 0.01ms !important;
     }
+}
+
+.chart-bar-fill.is-warning {
+    background-color: var(--warning);
+}
+
+.chart-bar-fill.is-over {
+    background-color: var(--danger);
+}
+
+.chart-bar-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.budget-status {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--badge-bg);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.budget-status.status-warning {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.5);
+    color: var(--warning);
+}
+
+.budget-status.status-over {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: var(--danger);
+}
+
+.alert-banner {
+    background-color: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.alert-banner[hidden] {
+    display: none;
+}
+
+.card-hint {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+}
+
+.budget-form-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.budget-form-actions .btn-primary {
+    margin-top: 0;
+}
+
+.form-error {
+    color: var(--danger);
+    font-size: 0.85rem;
+    min-height: 1.2em;
+    margin-bottom: 0.5rem;
+}
+
+.form-error:empty {
+    display: none;
+}
+
+.budget-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 1.25rem;
+}
+
+.budget-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    background-color: var(--surface-alt);
+    border: 1px solid var(--border);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    flex-wrap: wrap;
+}
+
+.budget-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.budget-item-cat {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.budget-item-amounts {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.budget-item-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.btn-small {
+    background-color: var(--badge-bg);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: opacity 0.2s ease;
+}
+
+.btn-small:hover {
+    opacity: 0.85;
+}
+
+.btn-danger-ghost {
+    color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.backup-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.import-panel {
+    margin-top: 1rem;
+    background-color: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.import-panel[hidden] {
+    display: none;
+}
+
+.import-panel .card-hint {
+    margin-bottom: 0.75rem;
+}
+
+.radio-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.radio-row label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.radio-row input[type="radio"] {
+    accent-color: var(--accent);
+}
+
+.status-line {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.75rem;
+}
+
+.status-line:empty {
+    display: none;
 }
