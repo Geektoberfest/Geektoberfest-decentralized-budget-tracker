@@ -270,7 +270,8 @@ form.addEventListener("submit", async (e) => {
     const amount = convertToBase(entered);
     if (!Number.isFinite(amount)) return;
 
-    await addTransaction({ description, amount, category, date });
+    // Store provenance so offline/stale-rate rows can be audited later.
+    await addTransaction({ description, amount, category, date, currency: activeCurrency, rateUsed: getRate(activeCurrency), ratesSource });
     form.reset();
     categoryInput.value = "";
     await loadData();
@@ -303,8 +304,12 @@ async function loadData() {
         `).join("");
     }
 
-    // Calculate total spent (in USD base, converted for display)
-    const total = txs.reduce((sum, tx) => sum + tx.amount, 0);
+    // Calculate total spent (in USD base, converted for display).
+    // Number() guard: one corrupt row must not poison the total to NaN/string.
+    const total = txs.reduce((sum, tx) => {
+        const v = Number(tx.amount);
+        return sum + (Number.isFinite(v) ? v : 0);
+    }, 0);
     totalSpentEl.textContent = formatBaseAmount(total);
 
     // Render Category Breakdown Chart
@@ -314,7 +319,8 @@ async function loadData() {
         const categoryMap = {};
         txs.forEach(tx => {
             const cat = tx.category || "General";
-            categoryMap[cat] = (categoryMap[cat] || 0) + tx.amount;
+            const v = Number(tx.amount);
+            categoryMap[cat] = (categoryMap[cat] || 0) + (Number.isFinite(v) ? v : 0);
         });
         
         expenseChartEl.innerHTML = Object.entries(categoryMap).map(([cat, amt]) => {
