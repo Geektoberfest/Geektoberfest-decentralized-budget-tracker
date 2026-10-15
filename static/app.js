@@ -190,6 +190,7 @@ function deleteTransaction(id) {
 }
 
 // UI & ML Integration
+// UI & ML Integration
 const descInput = document.getElementById("description");
 const amountInput = document.getElementById("amount");
 const categoryInput = document.getElementById("category");
@@ -202,7 +203,81 @@ const forecastConfidenceEl = document.getElementById("forecast-confidence");
 const budgetAdviceEl = document.getElementById("budget-advice");
 const expenseChartEl = document.getElementById("expense-chart");
 
+// Filter UI Elements
+const searchFilterInput = document.getElementById("search-filter");
+const categoryFilterSelect = document.getElementById("category-filter");
+const monthFilterSelect = document.getElementById("month-filter");
+const dateFromInput = document.getElementById("filter-date-from");
+const dateToInput = document.getElementById("filter-date-to");
+const clearFiltersBtn = document.getElementById("clear-filters-btn");
+const filterCountEl = document.getElementById("filter-count");
+
 let classifyTimeout = null;
+let searchDebounceTimeout = null;
+let allTransactions = [];
+let activeFilters = {
+    search: "",
+    category: "",
+    month: "",
+    dateFrom: "",
+    dateTo: ""
+};
+
+/**
+ * Filter transactions based on combined criteria:
+ * - search: case-insensitive match on description and category
+ * - category: exact category match
+ * - month: "YYYY-MM" matching the transaction date
+ * - dateFrom / dateTo: inclusive date boundary filtering
+ */
+function filterTransactions(transactions, filters = {}) {
+    if (!Array.isArray(transactions)) return [];
+    const searchLower = (filters.search || "").trim().toLowerCase();
+    const catFilter = (filters.category || "").trim().toLowerCase();
+    const monthFilter = (filters.month || "").trim();
+    const fromTime = filters.dateFrom ? new Date(filters.dateFrom + "T00:00:00").getTime() : null;
+    const toTime = filters.dateTo ? new Date(filters.dateTo + "T23:59:59.999").getTime() : null;
+
+    return transactions.filter(tx => {
+        if (!tx) return false;
+
+        // Search text matching description and category (case-insensitive)
+        if (searchLower) {
+            const desc = (tx.description || "").toLowerCase();
+            const cat = (tx.category || "").toLowerCase();
+            if (!desc.includes(searchLower) && !cat.includes(searchLower)) {
+                return false;
+            }
+        }
+
+        // Category filter
+        if (catFilter) {
+            const cat = (tx.category || "").toLowerCase();
+            if (cat !== catFilter) {
+                return false;
+            }
+        }
+
+        // Month filter ("YYYY-MM")
+        if (monthFilter) {
+            const txMonth = (tx.date || "").slice(0, 7);
+            if (txMonth !== monthFilter) {
+                return false;
+            }
+        }
+
+        // Date range
+        if (fromTime !== null || toTime !== null) {
+            if (!tx.date) return false;
+            const txTime = new Date(tx.date).getTime();
+            if (isNaN(txTime)) return false;
+            if (fromTime !== null && txTime < fromTime) return false;
+            if (toTime !== null && txTime > toTime) return false;
+        }
+
+        return true;
+    });
+}
 
 descInput.addEventListener("input", () => {
     clearTimeout(classifyTimeout);
@@ -251,15 +326,75 @@ async function removeTx(id) {
     await loadData();
 }
 
-async function loadData() {
-    await fetchRates();
-    const txs = await getTransactions();
-    
-    // Render list (stored USD -> display currency)
-    if (txs.length === 0) {
-        transactionList.innerHTML = `<p class="empty-state">No transactions recorded yet.</p>`;
+function updateFilterDropdownOptions() {
+    if (!categoryFilterSelect || !monthFilterSelect) return;
+
+    // Category options
+    const currentCat = activeFilters.category;
+    const categories = Array.from(new Set(allTransactions.map(t => (t.category || "General").trim()))).sort();
+    categoryFilterSelect.innerHTML = `<option value="">All Categories</option>` +
+        categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    if (categories.includes(currentCat)) {
+        categoryFilterSelect.value = currentCat;
     } else {
-        transactionList.innerHTML = txs.reverse().map(tx => `
+        activeFilters.category = "";
+        categoryFilterSelect.value = "";
+    }
+
+    // Month options (e.g., "October 2026")
+    const currentMonth = activeFilters.month;
+    const months = Array.from(new Set(
+        allTransactions
+            .map(t => (t.date || "").slice(0, 7))
+            .filter(m => /^\d{4}-\d{2}$/.test(m))
+    )).sort().reverse();
+
+    monthFilterSelect.innerHTML = `<option value="">All Months</option>` +
+        months.map(m => {
+            const [y, mon] = m.split("-");
+            const dateObj = new Date(parseInt(y, 10), parseInt(mon, 10) - 1, 1);
+            const label = isNaN(dateObj.getTime())
+                ? m
+                : dateObj.toLocaleString("en-US", { month: "long", year: "numeric" });
+            return `<option value="${m}">${label}</option>`;
+        }).join("");
+
+    if (months.includes(currentMonth)) {
+        monthFilterSelect.value = currentMonth;
+    } else {
+        activeFilters.month = "";
+        monthFilterSelect.value = "";
+    }
+}
+
+async function renderFilteredView() {
+    const filtered = filterTransactions(allTransactions, activeFilters);
+    const hasActiveFilters = Boolean(
+        activeFilters.search ||
+        activeFilters.category ||
+        activeFilters.month ||
+        activeFilters.dateFrom ||
+        activeFilters.dateTo
+    );
+
+    // Update filter count badge
+    if (filterCountEl) {
+        if (allTransactions.length === 0) {
+            filterCountEl.textContent = "";
+        } else if (hasActiveFilters) {
+            filterCountEl.textContent = `Showing ${filtered.length} of ${allTransactions.length}`;
+        } else {
+            filterCountEl.textContent = `${allTransactions.length} transaction${allTransactions.length === 1 ? "" : "s"}`;
+        }
+    }
+
+    // Render list (stored USD -> display currency)
+    if (allTransactions.length === 0) {
+        transactionList.innerHTML = `<p class="empty-state">No transactions recorded yet.</p>`;
+    } else if (filtered.length === 0) {
+        transactionList.innerHTML = `<p class="empty-state">No transactions found matching your filters.</p>`;
+    } else {
+        transactionList.innerHTML = [...filtered].reverse().map(tx => `
             <div class="transaction-item">
                 <div class="tx-info">
                     <span class="tx-desc">${escapeHtml(tx.description)}</span>
@@ -274,19 +409,19 @@ async function loadData() {
     }
 
     // Calculate total spent (in USD base, converted for display)
-    const total = txs.reduce((sum, tx) => sum + tx.amount, 0);
+    const total = filtered.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
     totalSpentEl.textContent = formatBaseAmount(total);
 
     // Render Category Breakdown Chart
-    if (txs.length === 0) {
+    if (filtered.length === 0) {
         expenseChartEl.innerHTML = `<p class="empty-state">No data for chart yet.</p>`;
     } else {
         const categoryMap = {};
-        txs.forEach(tx => {
+        filtered.forEach(tx => {
             const cat = tx.category || "General";
-            categoryMap[cat] = (categoryMap[cat] || 0) + tx.amount;
+            categoryMap[cat] = (categoryMap[cat] || 0) + (Number(tx.amount) || 0);
         });
-        
+
         expenseChartEl.innerHTML = Object.entries(categoryMap).map(([cat, amt]) => {
             const pct = total > 0 ? (amt / total) * 100 : 0;
             return `
@@ -303,26 +438,25 @@ async function loadData() {
         }).join("");
     }
 
-    // Group by month for forecasting (or chronological buckets if few months)
-    if (txs.length > 0) {
+    // Forecast calculation
+    if (filtered.length > 0) {
         const monthMap = {};
-        txs.forEach(tx => {
+        filtered.forEach(tx => {
             const m = (tx.date || "").slice(0, 7);
-            if (m) monthMap[m] = (monthMap[m] || 0) + tx.amount;
+            if (m) monthMap[m] = (monthMap[m] || 0) + (Number(tx.amount) || 0);
         });
         const monthKeys = Object.keys(monthMap).sort();
         let history;
         if (monthKeys.length >= 3) {
             history = monthKeys.map(k => monthMap[k]);
-        } else if (txs.length < 3) {
-            history = txs.map(t => t.amount);
+        } else if (filtered.length < 3) {
+            history = filtered.map(t => Number(t.amount) || 0);
         } else {
-            // Chunk transactions across periods to estimate spending trend
-            const chunkSize = Math.ceil(txs.length / 3);
+            const chunkSize = Math.ceil(filtered.length / 3);
             history = [
-                txs.slice(0, chunkSize).reduce((s, t) => s + t.amount, 0),
-                txs.slice(chunkSize, chunkSize * 2).reduce((s, t) => s + t.amount, 0),
-                txs.slice(chunkSize * 2).reduce((s, t) => s + t.amount, 0)
+                filtered.slice(0, chunkSize).reduce((s, t) => s + (Number(t.amount) || 0), 0),
+                filtered.slice(chunkSize, chunkSize * 2).reduce((s, t) => s + (Number(t.amount) || 0), 0),
+                filtered.slice(chunkSize * 2).reduce((s, t) => s + (Number(t.amount) || 0), 0)
             ];
         }
 
@@ -383,6 +517,85 @@ async function loadData() {
         }
         budgetAdviceEl.textContent = `Add transactions to receive AI budget suggestions.`;
     }
+}
+
+async function loadData() {
+    await fetchRates();
+    allTransactions = await getTransactions();
+    updateFilterDropdownOptions();
+    await renderFilteredView();
+}
+
+// Bind filter event listeners
+if (searchFilterInput) {
+    searchFilterInput.addEventListener("input", () => {
+        clearTimeout(searchDebounceTimeout);
+        searchDebounceTimeout = setTimeout(() => {
+            activeFilters.search = searchFilterInput.value;
+            renderFilteredView();
+        }, 250);
+    });
+}
+
+if (categoryFilterSelect) {
+    categoryFilterSelect.addEventListener("change", () => {
+        activeFilters.category = categoryFilterSelect.value;
+        renderFilteredView();
+    });
+}
+
+if (monthFilterSelect) {
+    monthFilterSelect.addEventListener("change", () => {
+        activeFilters.month = monthFilterSelect.value;
+        // If a month is chosen and custom dates contradict, clear custom dates for clarity
+        if (monthFilterSelect.value) {
+            if (dateFromInput) dateFromInput.value = "";
+            if (dateToInput) dateToInput.value = "";
+            activeFilters.dateFrom = "";
+            activeFilters.dateTo = "";
+        }
+        renderFilteredView();
+    });
+}
+
+if (dateFromInput) {
+    dateFromInput.addEventListener("change", () => {
+        activeFilters.dateFrom = dateFromInput.value;
+        if (dateFromInput.value && monthFilterSelect) {
+            monthFilterSelect.value = "";
+            activeFilters.month = "";
+        }
+        renderFilteredView();
+    });
+}
+
+if (dateToInput) {
+    dateToInput.addEventListener("change", () => {
+        activeFilters.dateTo = dateToInput.value;
+        if (dateToInput.value && monthFilterSelect) {
+            monthFilterSelect.value = "";
+            activeFilters.month = "";
+        }
+        renderFilteredView();
+    });
+}
+
+if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener("click", () => {
+        activeFilters = {
+            search: "",
+            category: "",
+            month: "",
+            dateFrom: "",
+            dateTo: ""
+        };
+        if (searchFilterInput) searchFilterInput.value = "";
+        if (categoryFilterSelect) categoryFilterSelect.value = "";
+        if (monthFilterSelect) monthFilterSelect.value = "";
+        if (dateFromInput) dateFromInput.value = "";
+        if (dateToInput) dateToInput.value = "";
+        renderFilteredView();
+    });
 }
 
 function escapeHtml(str) {
@@ -487,3 +700,8 @@ if (systemThemeMedia.addEventListener) {
     systemThemeMedia.addListener(onSystemThemeChange);
 }
 
+if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+        filterTransactions
+    };
+}

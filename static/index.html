@@ -112,7 +112,43 @@
             </section>
 
             <section class="card list-card">
-                <h2>Transactions</h2>
+                <div class="list-card-header">
+                    <h2>Transactions</h2>
+                    <span id="filter-count" class="filter-count"></span>
+                </div>
+                <div class="filters-container" id="filters-container">
+                    <div class="filter-row">
+                        <div class="filter-group search-group">
+                            <label for="search-filter">Search</label>
+                            <input type="text" id="search-filter" placeholder="Search description or category..." autocomplete="off">
+                        </div>
+                        <div class="filter-group category-group">
+                            <label for="category-filter">Category</label>
+                            <select id="category-filter">
+                                <option value="">All Categories</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <div class="filter-group month-group">
+                            <label for="month-filter">Month</label>
+                            <select id="month-filter">
+                                <option value="">All Months</option>
+                            </select>
+                        </div>
+                        <div class="filter-group date-from-group">
+                            <label for="filter-date-from">From</label>
+                            <input type="date" id="filter-date-from">
+                        </div>
+                        <div class="filter-group date-to-group">
+                            <label for="filter-date-to">To</label>
+                            <input type="date" id="filter-date-to">
+                        </div>
+                        <div class="filter-group clear-group">
+                            <button type="button" id="clear-filters-btn" class="btn-clear-filters">Clear</button>
+                        </div>
+                    </div>
+                </div>
                 <div id="transaction-list" class="transaction-list">
                     <p class="empty-state">No transactions recorded yet.</p>
                 </div>

@@ -97,3 +97,22 @@ def test_rates_invalid_base_falls_back_to_usd():
     assert response.status_code == 200
     assert response.json()["base"] == "USD"
 
+
+def test_static_filter_elements():
+    response = client.get("/static/index.html")
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="search-filter"' in html
+    assert 'id="category-filter"' in html
+    assert 'id="month-filter"' in html
+    assert 'id="filter-date-from"' in html
+    assert 'id="filter-date-to"' in html
+    assert 'id="clear-filters-btn"' in html
+    assert 'id="filter-count"' in html
+
+    js_response = client.get("/static/app.js")
+    assert js_response.status_code == 200
+    js = js_response.text
+    assert "filterTransactions" in js
+    assert "activeFilters" in js
+    assert "clearFiltersBtn" in js
