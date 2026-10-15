@@ -276,6 +276,57 @@ input:focus {
     font-family: var(--font-serif);
 }
 
+.stat-box-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+}
+
+.stat-range {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.35rem;
+}
+
+.confidence-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    background: var(--badge-bg);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    transition: all 0.2s ease;
+}
+
+.confidence-badge.confidence-high {
+    background: var(--accent-glow);
+    color: var(--accent);
+    border-color: var(--accent-border);
+}
+
+.confidence-badge.confidence-medium {
+    background: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+    border-color: rgba(234, 179, 8, 0.35);
+}
+
+.confidence-badge.confidence-low {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
+.confidence-badge.confidence-none {
+    background: var(--badge-bg);
+    color: var(--text-secondary);
+    border-color: var(--border);
+}
+
 .advice-box {
     background-color: var(--accent-glow);
     border: 1px solid var(--accent-border);
@@ -393,6 +444,86 @@ input:focus {
 
 .btn-delete:hover {
     color: var(--danger);
+}
+
+.list-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.filter-count {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.filters-container {
+    background-color: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.filter-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex: 1;
+    min-width: 130px;
+}
+
+.filter-group select,
+.filter-group input {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+}
+
+.filter-group select:focus,
+.filter-group input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.filter-group.clear-group {
+    flex: 0 0 auto;
+    min-width: auto;
+}
+
+.btn-clear-filters {
+    background-color: var(--badge-bg);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    height: 35px;
+}
+
+.btn-clear-filters:hover {
+    background-color: var(--border);
+    color: var(--text-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {

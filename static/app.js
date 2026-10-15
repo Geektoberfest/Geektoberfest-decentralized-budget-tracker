@@ -64,9 +64,9 @@ function convertFromBase(baseAmount) {
 }
 
 // Display-currency input -> canonical USD for storage.
-// CRITICAL: never guess with fallback rates. Returns NaN when no live/cached
-// rates are available for a non-USD currency so the submit handler blocks
-// the write instead of storing a permanently wrong USD value.
+// Never guess with fallback rates. Returns NaN when no live/cached rates are
+// available for a non-USD currency so the submit handler blocks the write
+// instead of storing a permanently wrong USD value.
 function isConversionReady() {
     if (activeCurrency === BASE_CURRENCY) return true;
     return ratesReady;
@@ -79,6 +79,12 @@ function convertToBase(displayAmount) {
 
 function formatBaseAmount(baseAmount) {
     return formatAmount(convertFromBase(baseAmount));
+}
+
+// One corrupt IndexedDB row must not poison totals/charts to NaN.
+function finiteAmount(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
 }
 
 function getCachedRates() {
@@ -155,7 +161,9 @@ function updateRateStatus() {
 
 function updateSubmitState() {
     const formEl = document.getElementById("transaction-form");
-    const submitBtn = formEl ? formEl.querySelector('[type="submit"]') : null;
+    const submitBtn = (formEl && typeof formEl.querySelector === "function")
+        ? formEl.querySelector('[type="submit"]')
+        : null;
     if (!submitBtn) return;
     const blocked = typeof isConversionReady === "function" ? !isConversionReady() : false;
     submitBtn.disabled = blocked;
@@ -221,10 +229,86 @@ const form = document.getElementById("transaction-form");
 const transactionList = document.getElementById("transaction-list");
 const totalSpentEl = document.getElementById("total-spent");
 const forecastSpentEl = document.getElementById("forecast-spent");
+const forecastRangeEl = document.getElementById("forecast-range");
+const forecastConfidenceEl = document.getElementById("forecast-confidence");
 const budgetAdviceEl = document.getElementById("budget-advice");
 const expenseChartEl = document.getElementById("expense-chart");
 
+// Filter UI Elements
+const searchFilterInput = document.getElementById("search-filter");
+const categoryFilterSelect = document.getElementById("category-filter");
+const monthFilterSelect = document.getElementById("month-filter");
+const dateFromInput = document.getElementById("filter-date-from");
+const dateToInput = document.getElementById("filter-date-to");
+const clearFiltersBtn = document.getElementById("clear-filters-btn");
+const filterCountEl = document.getElementById("filter-count");
+
 let classifyTimeout = null;
+let searchDebounceTimeout = null;
+let allTransactions = [];
+let activeFilters = {
+    search: "",
+    category: "",
+    month: "",
+    dateFrom: "",
+    dateTo: ""
+};
+
+/**
+ * Filter transactions based on combined criteria:
+ * - search: case-insensitive match on description and category
+ * - category: exact category match
+ * - month: "YYYY-MM" matching the transaction date
+ * - dateFrom / dateTo: inclusive date boundary filtering
+ */
+function filterTransactions(transactions, filters = {}) {
+    if (!Array.isArray(transactions)) return [];
+    const searchLower = (filters.search || "").trim().toLowerCase();
+    const catFilter = (filters.category || "").trim().toLowerCase();
+    const monthFilter = (filters.month || "").trim();
+    const fromTime = filters.dateFrom ? new Date(filters.dateFrom + "T00:00:00").getTime() : null;
+    const toTime = filters.dateTo ? new Date(filters.dateTo + "T23:59:59.999").getTime() : null;
+
+    return transactions.filter(tx => {
+        if (!tx) return false;
+
+        // Search text matching description and category (case-insensitive)
+        if (searchLower) {
+            const desc = (tx.description || "").toLowerCase();
+            const cat = (tx.category || "").toLowerCase();
+            if (!desc.includes(searchLower) && !cat.includes(searchLower)) {
+                return false;
+            }
+        }
+
+        // Category filter
+        if (catFilter) {
+            const cat = (tx.category || "").toLowerCase();
+            if (cat !== catFilter) {
+                return false;
+            }
+        }
+
+        // Month filter ("YYYY-MM")
+        if (monthFilter) {
+            const txMonth = (tx.date || "").slice(0, 7);
+            if (txMonth !== monthFilter) {
+                return false;
+            }
+        }
+
+        // Date range
+        if (fromTime !== null || toTime !== null) {
+            if (!tx.date) return false;
+            const txTime = new Date(tx.date).getTime();
+            if (isNaN(txTime)) return false;
+            if (fromTime !== null && txTime < fromTime) return false;
+            if (toTime !== null && txTime > toTime) return false;
+        }
+
+        return true;
+    });
+}
 
 descInput.addEventListener("input", () => {
     clearTimeout(classifyTimeout);
@@ -270,7 +354,7 @@ form.addEventListener("submit", async (e) => {
     const amount = convertToBase(entered);
     if (!Number.isFinite(amount)) return;
 
-    // Store provenance so offline/stale-rate rows can be audited later.
+    // Store provenance so rate used at write time can be audited later.
     await addTransaction({ description, amount, category, date, currency: activeCurrency, rateUsed: getRate(activeCurrency), ratesSource });
     form.reset();
     categoryInput.value = "";
@@ -282,15 +366,75 @@ async function removeTx(id) {
     await loadData();
 }
 
-async function loadData() {
-    await fetchRates();
-    const txs = await getTransactions();
-    
-    // Render list (stored USD -> display currency)
-    if (txs.length === 0) {
-        transactionList.innerHTML = `<p class="empty-state">No transactions recorded yet.</p>`;
+function updateFilterDropdownOptions() {
+    if (!categoryFilterSelect || !monthFilterSelect) return;
+
+    // Category options
+    const currentCat = activeFilters.category;
+    const categories = Array.from(new Set(allTransactions.map(t => (t.category || "General").trim()))).sort();
+    categoryFilterSelect.innerHTML = `<option value="">All Categories</option>` +
+        categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    if (categories.includes(currentCat)) {
+        categoryFilterSelect.value = currentCat;
     } else {
-        transactionList.innerHTML = txs.reverse().map(tx => `
+        activeFilters.category = "";
+        categoryFilterSelect.value = "";
+    }
+
+    // Month options (e.g., "October 2026")
+    const currentMonth = activeFilters.month;
+    const months = Array.from(new Set(
+        allTransactions
+            .map(t => (t.date || "").slice(0, 7))
+            .filter(m => /^\d{4}-\d{2}$/.test(m))
+    )).sort().reverse();
+
+    monthFilterSelect.innerHTML = `<option value="">All Months</option>` +
+        months.map(m => {
+            const [y, mon] = m.split("-");
+            const dateObj = new Date(parseInt(y, 10), parseInt(mon, 10) - 1, 1);
+            const label = isNaN(dateObj.getTime())
+                ? m
+                : dateObj.toLocaleString("en-US", { month: "long", year: "numeric" });
+            return `<option value="${m}">${label}</option>`;
+        }).join("");
+
+    if (months.includes(currentMonth)) {
+        monthFilterSelect.value = currentMonth;
+    } else {
+        activeFilters.month = "";
+        monthFilterSelect.value = "";
+    }
+}
+
+async function renderFilteredView() {
+    const filtered = filterTransactions(allTransactions, activeFilters);
+    const hasActiveFilters = Boolean(
+        activeFilters.search ||
+        activeFilters.category ||
+        activeFilters.month ||
+        activeFilters.dateFrom ||
+        activeFilters.dateTo
+    );
+
+    // Update filter count badge
+    if (filterCountEl) {
+        if (allTransactions.length === 0) {
+            filterCountEl.textContent = "";
+        } else if (hasActiveFilters) {
+            filterCountEl.textContent = `Showing ${filtered.length} of ${allTransactions.length}`;
+        } else {
+            filterCountEl.textContent = `${allTransactions.length} transaction${allTransactions.length === 1 ? "" : "s"}`;
+        }
+    }
+
+    // Render list (stored USD -> display currency)
+    if (allTransactions.length === 0) {
+        transactionList.innerHTML = `<p class="empty-state">No transactions recorded yet.</p>`;
+    } else if (filtered.length === 0) {
+        transactionList.innerHTML = `<p class="empty-state">No transactions found matching your filters.</p>`;
+    } else {
+        transactionList.innerHTML = [...filtered].reverse().map(tx => `
             <div class="transaction-item">
                 <div class="tx-info">
                     <span class="tx-desc">${escapeHtml(tx.description)}</span>
@@ -305,24 +449,19 @@ async function loadData() {
     }
 
     // Calculate total spent (in USD base, converted for display).
-    // Number() guard: one corrupt row must not poison the total to NaN/string.
-    const total = txs.reduce((sum, tx) => {
-        const v = Number(tx.amount);
-        return sum + (Number.isFinite(v) ? v : 0);
-    }, 0);
+    const total = filtered.reduce((sum, tx) => sum + finiteAmount(tx.amount), 0);
     totalSpentEl.textContent = formatBaseAmount(total);
 
     // Render Category Breakdown Chart
-    if (txs.length === 0) {
+    if (filtered.length === 0) {
         expenseChartEl.innerHTML = `<p class="empty-state">No data for chart yet.</p>`;
     } else {
         const categoryMap = {};
-        txs.forEach(tx => {
+        filtered.forEach(tx => {
             const cat = tx.category || "General";
-            const v = Number(tx.amount);
-            categoryMap[cat] = (categoryMap[cat] || 0) + (Number.isFinite(v) ? v : 0);
+            categoryMap[cat] = (categoryMap[cat] || 0) + finiteAmount(tx.amount);
         });
-        
+
         expenseChartEl.innerHTML = Object.entries(categoryMap).map(([cat, amt]) => {
             const pct = total > 0 ? (amt / total) * 100 : 0;
             return `
@@ -339,11 +478,28 @@ async function loadData() {
         }).join("");
     }
 
-    // Group by month for forecasting (mock grouping by index for simplicity)
-    // In a real app, group by YYYY-MM
-    if (txs.length > 0) {
-        // Create dummy monthly history based on totals or entries
-        const history = [total * 0.8, total * 0.9, total]; 
+    // Forecast calculation
+    if (filtered.length > 0) {
+        const monthMap = {};
+        filtered.forEach(tx => {
+            const m = (tx.date || "").slice(0, 7);
+            if (m) monthMap[m] = (monthMap[m] || 0) + finiteAmount(tx.amount);
+        });
+        const monthKeys = Object.keys(monthMap).sort();
+        let history;
+        if (monthKeys.length >= 3) {
+            history = monthKeys.map(k => monthMap[k]);
+        } else if (filtered.length < 3) {
+            history = filtered.map(t => finiteAmount(t.amount));
+        } else {
+            const chunkSize = Math.ceil(filtered.length / 3);
+            history = [
+                filtered.slice(0, chunkSize).reduce((s, t) => s + finiteAmount(t.amount), 0),
+                filtered.slice(chunkSize, chunkSize * 2).reduce((s, t) => s + finiteAmount(t.amount), 0),
+                filtered.slice(chunkSize * 2).reduce((s, t) => s + finiteAmount(t.amount), 0)
+            ];
+        }
+
         try {
             const res = await fetch("/forecast", {
                 method: "POST",
@@ -352,7 +508,27 @@ async function loadData() {
             });
             const data = await res.json();
             forecastSpentEl.textContent = formatBaseAmount(data.forecast);
-            
+
+            if (forecastConfidenceEl) {
+                const conf = (data.confidence || "low").toLowerCase();
+                const label = conf.charAt(0).toUpperCase() + conf.slice(1);
+                forecastConfidenceEl.textContent = label;
+                forecastConfidenceEl.className = `confidence-badge confidence-${conf}`;
+                forecastConfidenceEl.title = data.message || `Confidence: ${label}`;
+            }
+
+            if (forecastRangeEl) {
+                if (data.lower !== null && data.lower !== undefined && data.upper !== null && data.upper !== undefined) {
+                    forecastRangeEl.textContent = `Range: ${formatBaseAmount(data.lower)} – ${formatBaseAmount(data.upper)}`;
+                    forecastRangeEl.title = "95% prediction interval (±1.96σ)";
+                } else if (data.message) {
+                    forecastRangeEl.textContent = "Range: N/A (need ≥3 months)";
+                    forecastRangeEl.title = data.message;
+                } else {
+                    forecastRangeEl.textContent = "Range: N/A";
+                }
+            }
+
             if (data.forecast > total * 1.2) {
                 budgetAdviceEl.textContent = `💡 Suggestion: Spending is trending upward. Consider reducing discretionary categories like Entertainment and Shopping.`;
             } else {
@@ -360,11 +536,106 @@ async function loadData() {
             }
         } catch (err) {
             console.error("Forecast error:", err);
+            if (forecastConfidenceEl) {
+                forecastConfidenceEl.textContent = "Error";
+                forecastConfidenceEl.className = "confidence-badge confidence-none";
+            }
+            if (forecastRangeEl) {
+                forecastRangeEl.textContent = "Range: Unavailable";
+            }
         }
     } else {
         forecastSpentEl.textContent = formatBaseAmount(0);
+        if (forecastConfidenceEl) {
+            forecastConfidenceEl.textContent = "—";
+            forecastConfidenceEl.className = "confidence-badge confidence-none";
+            forecastConfidenceEl.title = "No transactions recorded yet";
+        }
+        if (forecastRangeEl) {
+            forecastRangeEl.textContent = "Range: —";
+            forecastRangeEl.title = "";
+        }
         budgetAdviceEl.textContent = `Add transactions to receive AI budget suggestions.`;
     }
+}
+
+async function loadData() {
+    await fetchRates();
+    allTransactions = await getTransactions();
+    updateFilterDropdownOptions();
+    await renderFilteredView();
+}
+
+// Bind filter event listeners
+if (searchFilterInput) {
+    searchFilterInput.addEventListener("input", () => {
+        clearTimeout(searchDebounceTimeout);
+        searchDebounceTimeout = setTimeout(() => {
+            activeFilters.search = searchFilterInput.value;
+            renderFilteredView();
+        }, 250);
+    });
+}
+
+if (categoryFilterSelect) {
+    categoryFilterSelect.addEventListener("change", () => {
+        activeFilters.category = categoryFilterSelect.value;
+        renderFilteredView();
+    });
+}
+
+if (monthFilterSelect) {
+    monthFilterSelect.addEventListener("change", () => {
+        activeFilters.month = monthFilterSelect.value;
+        // If a month is chosen and custom dates contradict, clear custom dates for clarity
+        if (monthFilterSelect.value) {
+            if (dateFromInput) dateFromInput.value = "";
+            if (dateToInput) dateToInput.value = "";
+            activeFilters.dateFrom = "";
+            activeFilters.dateTo = "";
+        }
+        renderFilteredView();
+    });
+}
+
+if (dateFromInput) {
+    dateFromInput.addEventListener("change", () => {
+        activeFilters.dateFrom = dateFromInput.value;
+        if (dateFromInput.value && monthFilterSelect) {
+            monthFilterSelect.value = "";
+            activeFilters.month = "";
+        }
+        renderFilteredView();
+    });
+}
+
+if (dateToInput) {
+    dateToInput.addEventListener("change", () => {
+        activeFilters.dateTo = dateToInput.value;
+        if (dateToInput.value && monthFilterSelect) {
+            monthFilterSelect.value = "";
+            activeFilters.month = "";
+        }
+        renderFilteredView();
+    });
+}
+
+if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener("click", () => {
+        activeFilters = {
+            search: "",
+            category: "",
+            month: "",
+            dateFrom: "",
+            dateTo: ""
+        };
+        if (searchFilterInput) searchFilterInput.value = "";
+        if (categoryFilterSelect) categoryFilterSelect.value = "";
+        if (monthFilterSelect) monthFilterSelect.value = "";
+        if (dateFromInput) dateFromInput.value = "";
+        if (dateToInput) dateToInput.value = "";
+        renderFilteredView();
+    });
 }
 
 function escapeHtml(str) {
@@ -469,3 +740,8 @@ if (systemThemeMedia.addEventListener) {
     systemThemeMedia.addListener(onSystemThemeChange);
 }
 
+if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+        filterTransactions
+    };
+}

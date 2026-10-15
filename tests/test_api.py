@@ -20,6 +20,26 @@ def test_forecast_endpoint():
     data = response.json()
     assert "forecast" in data
     assert data["forecast"] > 120.0
+    assert "lower" in data
+    assert "upper" in data
+    assert "confidence" in data
+    assert data["confidence"] == "high"
+
+def test_forecast_endpoint_noisy_and_insufficient():
+    res_noisy = client.post("/forecast", json={"history": [100.0, 300.0, 50.0, 280.0, 90.0]})
+    assert res_noisy.status_code == 200
+    data_noisy = res_noisy.json()
+    assert data_noisy["confidence"] == "low"
+    assert data_noisy["lower"] is not None
+    assert data_noisy["upper"] is not None
+
+    res_short = client.post("/forecast", json={"history": [100.0, 120.0]})
+    assert res_short.status_code == 200
+    data_short = res_short.json()
+    assert data_short["confidence"] == "low"
+    assert data_short["lower"] is None
+    assert data_short["upper"] is None
+    assert "message" in data_short and data_short["message"] is not None
 
 def test_static_theme_elements():
     response = client.get("/static/index.html")
@@ -27,6 +47,14 @@ def test_static_theme_elements():
     html = response.text
     assert 'id="theme-toggle"' in html
     assert 'data-theme' in html
+
+
+def test_static_forecast_elements():
+    response = client.get("/static/index.html")
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="forecast-confidence"' in html
+    assert 'id="forecast-range"' in html
 
 
 def test_static_currency_elements():
@@ -69,3 +97,22 @@ def test_rates_invalid_base_falls_back_to_usd():
     assert response.status_code == 200
     assert response.json()["base"] == "USD"
 
+
+def test_static_filter_elements():
+    response = client.get("/static/index.html")
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="search-filter"' in html
+    assert 'id="category-filter"' in html
+    assert 'id="month-filter"' in html
+    assert 'id="filter-date-from"' in html
+    assert 'id="filter-date-to"' in html
+    assert 'id="clear-filters-btn"' in html
+    assert 'id="filter-count"' in html
+
+    js_response = client.get("/static/app.js")
+    assert js_response.status_code == 200
+    js = js_response.text
+    assert "filterTransactions" in js
+    assert "activeFilters" in js
+    assert "clearFiltersBtn" in js

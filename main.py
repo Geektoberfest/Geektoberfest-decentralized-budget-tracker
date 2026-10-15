@@ -2,9 +2,9 @@ from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from ml.classifier import classify_expense
-from ml.forecaster import forecast_next_month
+from ml.forecaster import forecast_next_month, forecast_with_confidence
 import json
 import time
 import urllib.request
@@ -86,8 +86,7 @@ def classify(req: ClassifyRequest):
 
 @app.post("/forecast")
 def forecast(req: ForecastRequest):
-    predicted = forecast_next_month(req.history)
-    return {"forecast": predicted}
+    return forecast_with_confidence(req.history)
 
 @app.get("/rates")
 def rates(base: str = Query(default="USD")):
