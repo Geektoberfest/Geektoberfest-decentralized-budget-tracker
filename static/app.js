@@ -64,7 +64,16 @@ function convertFromBase(baseAmount) {
 }
 
 // Display-currency input -> canonical USD for storage.
+// CRITICAL: never guess with fallback rates. Returns NaN when no live/cached
+// rates are available for a non-USD currency so the submit handler blocks
+// the write instead of storing a permanently wrong USD value.
+function isConversionReady() {
+    if (activeCurrency === BASE_CURRENCY) return true;
+    return ratesReady;
+}
+
 function convertToBase(displayAmount) {
+    if (!isConversionReady()) return NaN;
     return Number(displayAmount) / getRate(activeCurrency);
 }
 
@@ -128,16 +137,31 @@ async function fetchRates() {
 
 function updateRateStatus() {
     const el = document.getElementById("rate-status");
-    if (!el) return;
-    if (activeCurrency === BASE_CURRENCY) {
-        el.textContent = ratesSource
-            ? `Base USD • rates via ${ratesSource}.`
-            : `Base USD.`;
-        return;
+    if (el) {
+        if (!isConversionReady()) {
+            el.textContent = `Rates unavailable — amounts in ${activeCurrency} cannot be stored accurately while offline. Connect to refresh rates. Stored in USD.`;
+        } else if (activeCurrency === BASE_CURRENCY) {
+            el.textContent = ratesSource
+                ? `Base USD • rates via ${ratesSource}.`
+                : `Base USD.`;
+        } else {
+            const rate = getRate(activeCurrency);
+            const example = formatBaseAmount(100);
+            el.textContent = `1 ${BASE_CURRENCY} = ${rate} ${activeCurrency} • 100 ${BASE_CURRENCY} = ${example} • via ${ratesSource || "fallback"}. Stored in USD.`;
+        }
     }
-    const rate = getRate(activeCurrency);
-    const example = formatBaseAmount(100);
-    el.textContent = `1 ${BASE_CURRENCY} = ${rate} ${activeCurrency} • 100 ${BASE_CURRENCY} = ${example} • via ${ratesSource || "fallback"}. Stored in USD.`;
+    updateSubmitState();
+}
+
+function updateSubmitState() {
+    const formEl = document.getElementById("transaction-form");
+    const submitBtn = formEl ? formEl.querySelector('[type="submit"]') : null;
+    if (!submitBtn) return;
+    const blocked = typeof isConversionReady === "function" ? !isConversionReady() : false;
+    submitBtn.disabled = blocked;
+    submitBtn.title = blocked
+        ? `Rates unavailable — connect to record ${activeCurrency} amounts accurately.`
+        : "";
 }
 
 // Initialize IndexedDB
@@ -235,8 +259,16 @@ form.addEventListener("submit", async (e) => {
 
     if (!description || isNaN(entered)) return;
 
+    // Block non-USD writes while rates are unavailable (no live/cached rates).
+    // convertToBase returns NaN in that state; never store a fallback guess.
+    if (!isConversionReady()) {
+        updateRateStatus();
+        return;
+    }
+
     // Entered in display currency -> normalize to USD base for storage.
     const amount = convertToBase(entered);
+    if (!Number.isFinite(amount)) return;
 
     await addTransaction({ description, amount, category, date });
     form.reset();
