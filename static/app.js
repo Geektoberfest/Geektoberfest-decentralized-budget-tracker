@@ -1,5 +1,7 @@
 const DB_NAME = "LedgerDB";
+const DB_VERSION = 2;
 const STORE_NAME = "transactions";
+const LIMITS_STORE_NAME = "budget_limits";
 let db = null;
 
 // --- Currency settings with real conversion (free no-key rates) ---
@@ -143,7 +145,7 @@ function updateRateStatus() {
 // Initialize IndexedDB
 function initDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 1);
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
             db = request.result;
@@ -153,6 +155,9 @@ function initDB() {
             const database = event.target.result;
             if (!database.objectStoreNames.contains(STORE_NAME)) {
                 database.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+            }
+            if (!database.objectStoreNames.contains(LIMITS_STORE_NAME)) {
+                database.createObjectStore(LIMITS_STORE_NAME, { keyPath: "category" });
             }
         };
     });
@@ -174,7 +179,7 @@ function getTransactions() {
         const transaction = db.transaction(STORE_NAME, "readonly");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.getAll();
-        request.onsuccess = () => resolve(request.result);
+        request.onsuccess = () => resolve(request.result || []);
         request.onerror = () => reject(request.error);
     });
 }
@@ -184,6 +189,36 @@ function deleteTransaction(id) {
         const transaction = db.transaction(STORE_NAME, "readwrite");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.delete(id);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+
+function saveLimit(category, limit) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(LIMITS_STORE_NAME, "readwrite");
+        const store = transaction.objectStore(LIMITS_STORE_NAME);
+        const request = store.put({ category: category.trim(), limit: Number(limit) });
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+function getLimits() {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(LIMITS_STORE_NAME, "readonly");
+        const store = transaction.objectStore(LIMITS_STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+function deleteLimit(category) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(LIMITS_STORE_NAME, "readwrite");
+        const store = transaction.objectStore(LIMITS_STORE_NAME);
+        const request = store.delete(category);
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error);
     });
@@ -212,9 +247,24 @@ const dateToInput = document.getElementById("filter-date-to");
 const clearFiltersBtn = document.getElementById("clear-filters-btn");
 const filterCountEl = document.getElementById("filter-count");
 
+// Budget Limit UI Elements & Notifications
+const limitForm = document.getElementById("limit-form");
+const limitCategoryInput = document.getElementById("limit-category");
+const limitAmountInput = document.getElementById("limit-amount");
+const limitAmountLabel = document.getElementById("limit-amount-label");
+const saveLimitBtn = document.getElementById("save-limit-btn");
+const cancelLimitEditBtn = document.getElementById("cancel-limit-edit-btn");
+const limitsListEl = document.getElementById("limits-list");
+const categorySuggestions = document.getElementById("category-suggestions");
+const overspendAlertEl = document.getElementById("overspend-alert");
+const overspendMessageEl = document.getElementById("overspend-message");
+const closeOverspendAlertBtn = document.getElementById("close-overspend-alert");
+
 let classifyTimeout = null;
 let searchDebounceTimeout = null;
 let allTransactions = [];
+let allLimits = [];
+let editingCategory = null;
 let activeFilters = {
     search: "",
     category: "",
@@ -222,6 +272,117 @@ let activeFilters = {
     dateFrom: "",
     dateTo: ""
 };
+
+/**
+ * Calculate monthly spent per category for a given month string "YYYY-MM".
+ * Progress is calculated per calendar month and resets each month.
+ */
+function calculateCategoryMonthlySpent(transactions, monthStr) {
+    if (!Array.isArray(transactions) || !monthStr) return {};
+    const totals = {};
+    transactions.forEach(tx => {
+        if (!tx || !tx.date) return;
+        const txMonth = (tx.date || "").slice(0, 7);
+        if (txMonth === monthStr) {
+            const cat = (tx.category || "General").trim();
+            totals[cat] = (totals[cat] || 0) + (Number(tx.amount) || 0);
+        }
+    });
+    return totals;
+}
+
+/**
+ * Determine progress percentage and visual state for a category budget limit.
+ * Warning state at 80%, Over Budget state at 100%+. Visual state conveyed by both color and text/icon.
+ */
+function getCategoryLimitStatus(spent, limit) {
+    const safeSpent = Number(spent) || 0;
+    const safeLimit = Number(limit) || 0;
+    if (safeLimit <= 0) {
+        return {
+            spent: safeSpent,
+            limit: safeLimit,
+            pct: 0,
+            status: "none",
+            isOver: false,
+            isWarning: false,
+            icon: "",
+            label: ""
+        };
+    }
+    const ratio = safeSpent / safeLimit;
+    const pct = ratio * 100;
+    if (pct >= 100) {
+        return {
+            spent: safeSpent,
+            limit: safeLimit,
+            pct,
+            status: "over",
+            isOver: true,
+            isWarning: false,
+            icon: "🚨",
+            label: `Over Budget (${pct.toFixed(0)}%)`
+        };
+    }
+    if (pct >= 80) {
+        return {
+            spent: safeSpent,
+            limit: safeLimit,
+            pct,
+            status: "warning",
+            isOver: false,
+            isWarning: true,
+            icon: "⚠️",
+            label: `Warning (${pct.toFixed(0)}%)`
+        };
+    }
+    return {
+        spent: safeSpent,
+        limit: safeLimit,
+        pct,
+        status: "ok",
+        isOver: false,
+        isWarning: false,
+        icon: "✓",
+        label: `On Track (${pct.toFixed(0)}%)`
+    };
+}
+
+function showOverspendNotice(category, spent, limit, desc, amt) {
+    if (!overspendAlertEl || !overspendMessageEl) return;
+    const overAmt = spent - limit;
+    overspendMessageEl.textContent = `Adding "${desc}" (${formatBaseAmount(amt)}) pushed "${category}" spending this month to ${formatBaseAmount(spent)}, exceeding your monthly limit of ${formatBaseAmount(limit)} by ${formatBaseAmount(overAmt)}!`;
+    overspendAlertEl.className = "alert-banner alert-danger";
+    const iconEl = overspendAlertEl.querySelector(".alert-icon");
+    if (iconEl) iconEl.textContent = "🚨";
+    const titleEl = overspendAlertEl.querySelector(".alert-title");
+    if (titleEl) titleEl.textContent = "Budget Limit Exceeded";
+    overspendAlertEl.style.display = "flex";
+    overspendAlertEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function showNearLimitNotice(category, spent, limit, desc, amt) {
+    if (!overspendAlertEl || !overspendMessageEl) return;
+    const pct = ((spent / limit) * 100).toFixed(0);
+    overspendMessageEl.textContent = `Adding "${desc}" (${formatBaseAmount(amt)}) brought "${category}" spending to ${formatBaseAmount(spent)} (${pct}% of your monthly limit of ${formatBaseAmount(limit)}).`;
+    overspendAlertEl.className = "alert-banner alert-warning";
+    const iconEl = overspendAlertEl.querySelector(".alert-icon");
+    if (iconEl) iconEl.textContent = "⚠️";
+    const titleEl = overspendAlertEl.querySelector(".alert-title");
+    if (titleEl) titleEl.textContent = "Approaching Budget Limit";
+    overspendAlertEl.style.display = "flex";
+    overspendAlertEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function hideOverspendNotice() {
+    if (overspendAlertEl) {
+        overspendAlertEl.style.display = "none";
+    }
+}
+
+if (closeOverspendAlertBtn) {
+    closeOverspendAlertBtn.addEventListener("click", hideOverspendNotice);
+}
 
 /**
  * Filter transactions based on combined criteria:
@@ -315,15 +476,150 @@ form.addEventListener("submit", async (e) => {
     // Entered in display currency -> normalize to USD base for storage.
     const amount = convertToBase(entered);
 
+    // Calculate whether this new transaction pushes the category over its monthly limit
+    const currentMonth = date.slice(0, 7);
+    const monthlyTotals = calculateCategoryMonthlySpent(allTransactions, currentMonth);
+    const prevSpent = monthlyTotals[category] || 0;
+    const newSpent = prevSpent + amount;
+    const matchingLimit = allLimits.find(l => (l.category || "").toLowerCase() === category.toLowerCase());
+
     await addTransaction({ description, amount, category, date });
     form.reset();
     categoryInput.value = "";
     await loadData();
+
+    if (matchingLimit && matchingLimit.limit > 0) {
+        if (newSpent > matchingLimit.limit) {
+            showOverspendNotice(category, newSpent, matchingLimit.limit, description, amount);
+        } else if (newSpent >= matchingLimit.limit * 0.8 && prevSpent < matchingLimit.limit * 0.8) {
+            showNearLimitNotice(category, newSpent, matchingLimit.limit, description, amount);
+        }
+    }
 });
 
 async function removeTx(id) {
     await deleteTransaction(id);
     await loadData();
+}
+
+function updateCategorySuggestions() {
+    if (!categorySuggestions) return;
+    const catSet = new Set();
+    allTransactions.forEach(t => {
+        if (t && t.category) catSet.add(t.category.trim());
+    });
+    allLimits.forEach(l => {
+        if (l && l.category) catSet.add(l.category.trim());
+    });
+    categorySuggestions.innerHTML = Array.from(catSet).sort().map(cat =>
+        `<option value="${escapeHtml(cat)}"></option>`
+    ).join("");
+}
+
+function resetLimitForm() {
+    editingCategory = null;
+    if (limitCategoryInput) {
+        limitCategoryInput.value = "";
+        limitCategoryInput.readOnly = false;
+    }
+    if (limitAmountInput) limitAmountInput.value = "";
+    if (saveLimitBtn) saveLimitBtn.textContent = "Set Budget Limit";
+    if (cancelLimitEditBtn) cancelLimitEditBtn.style.display = "none";
+}
+
+if (cancelLimitEditBtn) {
+    cancelLimitEditBtn.addEventListener("click", resetLimitForm);
+}
+
+if (limitForm) {
+    limitForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const category = limitCategoryInput.value.trim();
+        const entered = parseFloat(limitAmountInput.value);
+        if (!category || isNaN(entered) || entered <= 0) return;
+
+        const baseLimit = convertToBase(entered);
+
+        if (editingCategory && editingCategory.toLowerCase() !== category.toLowerCase()) {
+            await deleteLimit(editingCategory);
+        }
+
+        await saveLimit(category, baseLimit);
+        resetLimitForm();
+        await loadData();
+    });
+}
+
+function editLimit(category, baseLimit) {
+    editingCategory = category;
+    if (limitCategoryInput) {
+        limitCategoryInput.value = category;
+    }
+    if (limitAmountInput) {
+        const converted = convertFromBase(baseLimit);
+        const isZeroDecimal = activeCurrency === "JPY";
+        limitAmountInput.value = isZeroDecimal ? Math.round(converted) : Number(converted.toFixed(2));
+        limitAmountInput.focus();
+    }
+    if (saveLimitBtn) saveLimitBtn.textContent = "Update Budget Limit";
+    if (cancelLimitEditBtn) cancelLimitEditBtn.style.display = "inline-block";
+    const section = document.getElementById("budget-limits-section");
+    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+if (typeof window !== "undefined") {
+    window.editLimit = editLimit;
+}
+
+async function removeLimit(category) {
+    await deleteLimit(category);
+    if (editingCategory === category) {
+        resetLimitForm();
+    }
+    await loadData();
+}
+if (typeof window !== "undefined") {
+    window.removeLimit = removeLimit;
+}
+
+function renderLimitsList() {
+    if (!limitsListEl) return;
+    if (allLimits.length === 0) {
+        limitsListEl.innerHTML = `<p class="empty-state">No monthly budget limits set yet.</p>`;
+        return;
+    }
+
+    const currentMonth = activeFilters.month || new Date().toISOString().slice(0, 7);
+    const monthlyTotals = calculateCategoryMonthlySpent(allTransactions, currentMonth);
+
+    limitsListEl.innerHTML = allLimits.map(l => {
+        const cat = l.category;
+        const limitVal = Number(l.limit) || 0;
+        const spent = monthlyTotals[cat] || 0;
+        const status = getCategoryLimitStatus(spent, limitVal);
+
+        let badgeClass = "status-ok";
+        if (status.isOver) badgeClass = "status-over";
+        else if (status.isWarning) badgeClass = "status-warning";
+
+        const escapedCat = escapeHtml(cat);
+        const jsEscapedCat = cat.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+
+        return `
+            <div class="limit-item" data-category="${escapedCat}">
+                <div class="limit-info">
+                    <div class="limit-title-row">
+                        <span class="limit-category-name">${escapedCat}</span>
+                        <span class="budget-badge ${badgeClass}">${status.icon} ${status.label}</span>
+                    </div>
+                    <span class="limit-details">${formatBaseAmount(spent)} of ${formatBaseAmount(limitVal)} limit spent</span>
+                </div>
+                <div class="limit-actions">
+                    <button type="button" class="btn-limit-action btn-edit-limit" onclick="editLimit('${jsEscapedCat}', ${limitVal})">Edit</button>
+                    <button type="button" class="btn-limit-action btn-delete-limit" onclick="removeLimit('${jsEscapedCat}')">&times;</button>
+                </div>
+            </div>
+        `;
+    }).join("");
 }
 
 function updateFilterDropdownOptions() {
@@ -413,7 +709,7 @@ async function renderFilteredView() {
     totalSpentEl.textContent = formatBaseAmount(total);
 
     // Render Category Breakdown Chart
-    if (filtered.length === 0) {
+    if (filtered.length === 0 && allLimits.length === 0) {
         expenseChartEl.innerHTML = `<p class="empty-state">No data for chart yet.</p>`;
     } else {
         const categoryMap = {};
@@ -422,20 +718,76 @@ async function renderFilteredView() {
             categoryMap[cat] = (categoryMap[cat] || 0) + (Number(tx.amount) || 0);
         });
 
-        expenseChartEl.innerHTML = Object.entries(categoryMap).map(([cat, amt]) => {
-            const pct = total > 0 ? (amt / total) * 100 : 0;
-            return `
-                <div class="chart-bar-row">
-                    <div class="chart-bar-meta">
-                        <span>${escapeHtml(cat)}</span>
-                        <span>${formatBaseAmount(amt)} (${pct.toFixed(0)}%)</span>
-                    </div>
-                    <div class="chart-bar-track">
-                        <div class="chart-bar-fill" style="width: ${pct}%"></div>
-                    </div>
-                </div>
-            `;
-        }).join("");
+        const currentMonth = activeFilters.month || new Date().toISOString().slice(0, 7);
+        const monthlyTotals = calculateCategoryMonthlySpent(allTransactions, currentMonth);
+
+        const limitsMap = {};
+        allLimits.forEach(l => {
+            if (l && l.category) {
+                limitsMap[l.category.toLowerCase()] = Number(l.limit) || 0;
+            }
+        });
+
+        const allCategoryNames = new Set(Object.keys(categoryMap));
+        allLimits.forEach(l => {
+            if (l && l.category) allCategoryNames.add(l.category);
+        });
+
+        if (allCategoryNames.size === 0) {
+            expenseChartEl.innerHTML = `<p class="empty-state">No data for chart yet.</p>`;
+        } else {
+            expenseChartEl.innerHTML = Array.from(allCategoryNames).sort().map(cat => {
+                const amt = categoryMap[cat] || 0;
+                const catLower = cat.toLowerCase();
+                const hasLimit = Object.prototype.hasOwnProperty.call(limitsMap, catLower);
+
+                if (hasLimit) {
+                    const limitVal = limitsMap[catLower];
+                    const monthSpent = monthlyTotals[cat] || 0;
+                    const status = getCategoryLimitStatus(monthSpent, limitVal);
+
+                    let barClass = "chart-bar-fill";
+                    let badgeClass = "status-ok";
+                    if (status.isOver) {
+                        barClass = "chart-bar-fill-over";
+                        badgeClass = "status-over";
+                    } else if (status.isWarning) {
+                        barClass = "chart-bar-fill-warning";
+                        badgeClass = "status-warning";
+                    }
+
+                    const widthPct = Math.min(status.pct, 100);
+
+                    return `
+                        <div class="chart-bar-row">
+                            <div class="chart-bar-meta">
+                                <div class="chart-cat-title">
+                                    <span>${escapeHtml(cat)}</span>
+                                    <span class="status-badge ${badgeClass}">${status.icon} ${status.label}</span>
+                                </div>
+                                <span>${formatBaseAmount(monthSpent)} / ${formatBaseAmount(limitVal)}</span>
+                            </div>
+                            <div class="chart-bar-track">
+                                <div class="${barClass}" style="width: ${widthPct}%;"></div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    const pct = total > 0 ? (amt / total) * 100 : 0;
+                    return `
+                        <div class="chart-bar-row">
+                            <div class="chart-bar-meta">
+                                <span>${escapeHtml(cat)}</span>
+                                <span>${formatBaseAmount(amt)} (${pct.toFixed(0)}%)</span>
+                            </div>
+                            <div class="chart-bar-track">
+                                <div class="chart-bar-fill" style="width: ${pct}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join("");
+        }
     }
 
     // Forecast calculation
@@ -522,7 +874,10 @@ async function renderFilteredView() {
 async function loadData() {
     await fetchRates();
     allTransactions = await getTransactions();
+    allLimits = await getLimits();
+    updateCategorySuggestions();
     updateFilterDropdownOptions();
+    renderLimitsList();
     await renderFilteredView();
 }
 
@@ -612,11 +967,19 @@ function syncCurrencyUI() {
     if (amountLabel) {
         amountLabel.textContent = `Amount (${activeCurrency})`;
     }
+    if (limitAmountLabel) {
+        limitAmountLabel.textContent = `Monthly Limit (${activeCurrency})`;
+    }
     // Zero-decimal currencies (e.g. JPY) should not suggest cents.
     if (amountInput) {
         const isZeroDecimal = activeCurrency === "JPY";
         amountInput.step = isZeroDecimal ? "1" : "0.01";
         amountInput.placeholder = isZeroDecimal ? "0" : "0.00";
+    }
+    if (limitAmountInput) {
+        const isZeroDecimal = activeCurrency === "JPY";
+        limitAmountInput.step = isZeroDecimal ? "1" : "0.01";
+        limitAmountInput.placeholder = isZeroDecimal ? "0" : "0.00";
     }
     updateRateStatus();
 }
@@ -700,8 +1063,23 @@ if (systemThemeMedia.addEventListener) {
     systemThemeMedia.addListener(onSystemThemeChange);
 }
 
+async function getExportData() {
+    const transactions = await getTransactions();
+    const limits = await getLimits();
+    return {
+        version: "1.0",
+        currency: activeCurrency,
+        exportedAt: new Date().toISOString(),
+        transactions,
+        budgetLimits: limits
+    };
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
-        filterTransactions
+        filterTransactions,
+        calculateCategoryMonthlySpent,
+        getCategoryLimitStatus,
+        getExportData
     };
 }

@@ -10,6 +10,11 @@
     --accent-border: rgba(16, 185, 129, 0.3);
     --border: #27272a;
     --danger: #ef4444;
+    --danger-glow: rgba(239, 68, 68, 0.15);
+    --danger-border: rgba(239, 68, 68, 0.35);
+    --warning: #eab308;
+    --warning-glow: rgba(234, 179, 8, 0.15);
+    --warning-border: rgba(234, 179, 8, 0.35);
     --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
     --badge-bg: #27272a;
     --track-bg: #27272a;
@@ -30,6 +35,11 @@
     --accent-border: rgba(4, 120, 87, 0.25);
     --border: #e2e4e9;
     --danger: #dc2626;
+    --danger-glow: rgba(220, 38, 38, 0.12);
+    --danger-border: rgba(220, 38, 38, 0.3);
+    --warning: #d97706;
+    --warning-glow: rgba(217, 119, 6, 0.12);
+    --warning-border: rgba(217, 119, 6, 0.3);
     --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
     --badge-bg: #e5e7eb;
     --track-bg: #e5e7eb;
@@ -524,6 +534,235 @@ input:focus {
 .btn-clear-filters:hover {
     background-color: var(--border);
     color: var(--text-primary);
+}
+
+/* Alert Banner for Overspend Notices */
+.alert-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-radius: 8px;
+    border: 1px solid var(--danger-border);
+    background-color: var(--danger-glow);
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    animation: fadeInAlert 0.25s ease;
+}
+
+.alert-banner.alert-warning {
+    border-color: var(--warning-border);
+    background-color: var(--warning-glow);
+}
+
+.alert-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.alert-icon {
+    font-size: 1.35rem;
+    flex-shrink: 0;
+}
+
+.alert-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.875rem;
+}
+
+.alert-title {
+    font-weight: 600;
+}
+
+.alert-message {
+    color: var(--text-secondary);
+}
+
+.btn-close-alert {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.35rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.25rem;
+    transition: color 0.2s ease;
+}
+
+.btn-close-alert:hover {
+    color: var(--text-primary);
+}
+
+/* Budget Limits Section */
+.card-header-flex {
+    margin-bottom: 1.25rem;
+}
+
+.card-header-flex h2 {
+    margin-bottom: 0.25rem;
+}
+
+.limit-form-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.btn-secondary {
+    background-color: var(--surface-alt);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    font-weight: 500;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    margin-top: 0.5rem;
+}
+
+.btn-secondary:hover {
+    background-color: var(--border);
+}
+
+.limits-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.limit-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+}
+
+.limit-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.limit-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.limit-category-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.limit-details {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.limit-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.btn-limit-action {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-limit-action:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+.btn-limit-action.btn-delete-limit:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+/* Status Badges for Limits and Chart */
+.budget-badge, .status-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+}
+
+.status-ok {
+    background: var(--accent-glow);
+    color: var(--accent);
+    border-color: var(--accent-border);
+}
+
+.status-warning {
+    background: var(--warning-glow);
+    color: var(--warning);
+    border-color: var(--warning-border);
+}
+
+.status-over {
+    background: var(--danger-glow);
+    color: var(--danger);
+    border-color: var(--danger-border);
+}
+
+/* Category Chart Customizations for Limits */
+.chart-cat-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.chart-bar-fill-warning {
+    background-color: var(--warning);
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.chart-bar-fill-over {
+    background-color: var(--danger);
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+@keyframes fadeInAlert {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
