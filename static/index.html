@@ -65,6 +65,17 @@
         </header>
 
         <main>
+            <div id="overspend-alert" class="alert-banner alert-danger" role="alert" style="display: none;">
+                <div class="alert-content">
+                    <span class="alert-icon" aria-hidden="true">🚨</span>
+                    <div class="alert-text">
+                        <strong class="alert-title">Budget Limit Exceeded</strong>
+                        <span id="overspend-message" class="alert-message"></span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close-alert" id="close-overspend-alert" aria-label="Close notification">&times;</button>
+            </div>
+
             <section class="card input-card">
                 <h2>Add Transaction</h2>
                 <form id="transaction-form">
@@ -84,6 +95,37 @@
                     </div>
                     <button type="submit" class="btn-primary">Record Expense</button>
                 </form>
+            </section>
+
+            <section class="card limits-card" id="budget-limits-section">
+                <div class="card-header-flex">
+                    <h2>Monthly Budget Limits</h2>
+                    <span class="subtitle">Set targets per category to monitor spending</span>
+                </div>
+                <form id="limit-form" class="limit-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="limit-category">Category</label>
+                            <input type="text" id="limit-category" list="category-suggestions" placeholder="e.g., Food & Dining" required autocomplete="off">
+                            <datalist id="category-suggestions"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="limit-amount" id="limit-amount-label">Monthly Limit (USD)</label>
+                            <input type="number" id="limit-amount" step="0.01" min="0.01" placeholder="0.00" required>
+                        </div>
+                    </div>
+                    <div class="limit-form-actions">
+                        <button type="submit" id="save-limit-btn" class="btn-primary">Set Budget Limit</button>
+                        <button type="button" id="cancel-limit-edit-btn" class="btn-secondary" style="display: none;">Cancel</button>
+                    </div>
+                </form>
+
+                <div class="limits-list-wrapper">
+                    <span class="stat-label" style="margin-top: 1.25rem; margin-bottom: 0.5rem; display: block;">Configured Limits</span>
+                    <div id="limits-list" class="limits-list">
+                        <p class="empty-state">No monthly budget limits set yet.</p>
+                    </div>
+                </div>
             </section>
 
             <section class="card stats-card">
