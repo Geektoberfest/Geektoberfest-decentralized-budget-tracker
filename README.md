@@ -32,6 +32,22 @@ A privacy-first, local-first budget tracking application with an intelligent Pyt
 
 ---
 
+## Per-Category Budget Limits & Overspend Warnings
+
+- **Setting Limits:** In the **Monthly Budget Limits** section, enter or select a category and input an optional monthly target amount in your active display currency, then click **Set Budget Limit**.
+- **Managing Limits:** Users can add, edit, or remove limits for any category at any time. Active limits appear in the configured limits list with quick **Edit** and **Delete** controls.
+- **Private Local Storage:** Budget limits are stored securely and privately in browser-local IndexedDB (`budget_limits` store) in canonical USD, allowing seamless currency switching and offline access.
+- **Monthly Progress & Automatic Reset:** Progress is evaluated strictly per calendar month and resets at the start of every month.
+- **Category Breakdown Integration:**
+  - **On Track (< 80%):** Standard accent progress bar showing current monthly spending versus target limit.
+  - **Warning State (80% – 99%):** Changes progress bar color to amber and renders a distinct `⚠️ Warning (X%)` badge.
+  - **Over Budget (≥ 100%):** Changes progress bar color to red and renders a distinct `🚨 Over Budget (X%)` badge.
+  - **Accessible Indicators:** Warning and over-budget states are visually distinct and never conveyed by color alone (pairing high-contrast badges, status text, and icons).
+  - **Default Behavior:** Categories without a defined limit continue to display their proportion of total expenses as normal.
+- **Overspend Alert Notifications:** When a newly recorded transaction pushes a category over its monthly limit, an interactive alert banner immediately appears detailing the category, new total spent, and amount exceeded.
+
+---
+
 ## Getting Started
 
 ### Prerequisites

@@ -116,3 +116,39 @@ def test_static_filter_elements():
     assert "filterTransactions" in js
     assert "activeFilters" in js
     assert "clearFiltersBtn" in js
+
+
+def test_static_budget_limits_elements():
+    response = client.get("/static/index.html")
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="overspend-alert"' in html
+    assert 'id="overspend-message"' in html
+    assert 'id="close-overspend-alert"' in html
+    assert 'id="budget-limits-section"' in html
+    assert 'id="limit-form"' in html
+    assert 'id="limit-category"' in html
+    assert 'id="limit-amount"' in html
+    assert 'id="save-limit-btn"' in html
+    assert 'id="limits-list"' in html
+
+    js_response = client.get("/static/app.js")
+    assert js_response.status_code == 200
+    js = js_response.text
+    assert "budget_limits" in js
+    assert "saveLimit" in js
+    assert "getLimits" in js
+    assert "deleteLimit" in js
+    assert "calculateCategoryMonthlySpent" in js
+    assert "getCategoryLimitStatus" in js
+    assert "showOverspendNotice" in js
+    assert "chart-bar-fill-warning" in js
+    assert "chart-bar-fill-over" in js
+
+
+def test_budget_limits_js_suite():
+    import subprocess
+    result = subprocess.run(["node", "tests/test_limits.js"], capture_output=True, text=True)
+    assert result.returncode == 0, f"JS test runner failed:\n{result.stderr}\n{result.stdout}"
+    assert "All category budget limits tests passed successfully!" in result.stdout
+
