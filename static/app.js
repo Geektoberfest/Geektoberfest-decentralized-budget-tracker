@@ -66,12 +66,27 @@ function convertFromBase(baseAmount) {
 }
 
 // Display-currency input -> canonical USD for storage.
+// Never guess with fallback rates. Returns NaN when no live/cached rates are
+// available for a non-USD currency so the submit handler blocks the write
+// instead of storing a permanently wrong USD value.
+function isConversionReady() {
+    if (activeCurrency === BASE_CURRENCY) return true;
+    return ratesReady;
+}
+
 function convertToBase(displayAmount) {
+    if (!isConversionReady()) return NaN;
     return Number(displayAmount) / getRate(activeCurrency);
 }
 
 function formatBaseAmount(baseAmount) {
     return formatAmount(convertFromBase(baseAmount));
+}
+
+// One corrupt IndexedDB row must not poison totals/charts to NaN.
+function finiteAmount(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
 }
 
 function getCachedRates() {
@@ -130,16 +145,33 @@ async function fetchRates() {
 
 function updateRateStatus() {
     const el = document.getElementById("rate-status");
-    if (!el) return;
-    if (activeCurrency === BASE_CURRENCY) {
-        el.textContent = ratesSource
-            ? `Base USD • rates via ${ratesSource}.`
-            : `Base USD.`;
-        return;
+    if (el) {
+        if (!isConversionReady()) {
+            el.textContent = `Rates unavailable — amounts in ${activeCurrency} cannot be stored accurately while offline. Connect to refresh rates. Stored in USD.`;
+        } else if (activeCurrency === BASE_CURRENCY) {
+            el.textContent = ratesSource
+                ? `Base USD • rates via ${ratesSource}.`
+                : `Base USD.`;
+        } else {
+            const rate = getRate(activeCurrency);
+            const example = formatBaseAmount(100);
+            el.textContent = `1 ${BASE_CURRENCY} = ${rate} ${activeCurrency} • 100 ${BASE_CURRENCY} = ${example} • via ${ratesSource || "fallback"}. Stored in USD.`;
+        }
     }
-    const rate = getRate(activeCurrency);
-    const example = formatBaseAmount(100);
-    el.textContent = `1 ${BASE_CURRENCY} = ${rate} ${activeCurrency} • 100 ${BASE_CURRENCY} = ${example} • via ${ratesSource || "fallback"}. Stored in USD.`;
+    updateSubmitState();
+}
+
+function updateSubmitState() {
+    const formEl = document.getElementById("transaction-form");
+    const submitBtn = (formEl && typeof formEl.querySelector === "function")
+        ? formEl.querySelector('[type="submit"]')
+        : null;
+    if (!submitBtn) return;
+    const blocked = typeof isConversionReady === "function" ? !isConversionReady() : false;
+    submitBtn.disabled = blocked;
+    submitBtn.title = blocked
+        ? `Rates unavailable — connect to record ${activeCurrency} amounts accurately.`
+        : "";
 }
 
 // Initialize IndexedDB
@@ -473,8 +505,16 @@ form.addEventListener("submit", async (e) => {
 
     if (!description || isNaN(entered)) return;
 
+    // Block non-USD writes while rates are unavailable (no live/cached rates).
+    // convertToBase returns NaN in that state; never store a fallback guess.
+    if (!isConversionReady()) {
+        updateRateStatus();
+        return;
+    }
+
     // Entered in display currency -> normalize to USD base for storage.
     const amount = convertToBase(entered);
+    if (!Number.isFinite(amount)) return;
 
     // Calculate whether this new transaction pushes the category over its monthly limit
     const currentMonth = date.slice(0, 7);
@@ -483,7 +523,8 @@ form.addEventListener("submit", async (e) => {
     const newSpent = prevSpent + amount;
     const matchingLimit = allLimits.find(l => (l.category || "").toLowerCase() === category.toLowerCase());
 
-    await addTransaction({ description, amount, category, date });
+    // Store provenance so rate used at write time can be audited later.
+    await addTransaction({ description, amount, category, date, currency: activeCurrency, rateUsed: getRate(activeCurrency), ratesSource });
     form.reset();
     categoryInput.value = "";
     await loadData();
@@ -704,8 +745,8 @@ async function renderFilteredView() {
         `).join("");
     }
 
-    // Calculate total spent (in USD base, converted for display)
-    const total = filtered.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    // Calculate total spent (in USD base, converted for display).
+    const total = filtered.reduce((sum, tx) => sum + finiteAmount(tx.amount), 0);
     totalSpentEl.textContent = formatBaseAmount(total);
 
     // Render Category Breakdown Chart
@@ -715,7 +756,7 @@ async function renderFilteredView() {
         const categoryMap = {};
         filtered.forEach(tx => {
             const cat = tx.category || "General";
-            categoryMap[cat] = (categoryMap[cat] || 0) + (Number(tx.amount) || 0);
+            categoryMap[cat] = (categoryMap[cat] || 0) + finiteAmount(tx.amount);
         });
 
         const currentMonth = activeFilters.month || new Date().toISOString().slice(0, 7);
@@ -795,20 +836,20 @@ async function renderFilteredView() {
         const monthMap = {};
         filtered.forEach(tx => {
             const m = (tx.date || "").slice(0, 7);
-            if (m) monthMap[m] = (monthMap[m] || 0) + (Number(tx.amount) || 0);
+            if (m) monthMap[m] = (monthMap[m] || 0) + finiteAmount(tx.amount);
         });
         const monthKeys = Object.keys(monthMap).sort();
         let history;
         if (monthKeys.length >= 3) {
             history = monthKeys.map(k => monthMap[k]);
         } else if (filtered.length < 3) {
-            history = filtered.map(t => Number(t.amount) || 0);
+            history = filtered.map(t => finiteAmount(t.amount));
         } else {
             const chunkSize = Math.ceil(filtered.length / 3);
             history = [
-                filtered.slice(0, chunkSize).reduce((s, t) => s + (Number(t.amount) || 0), 0),
-                filtered.slice(chunkSize, chunkSize * 2).reduce((s, t) => s + (Number(t.amount) || 0), 0),
-                filtered.slice(chunkSize * 2).reduce((s, t) => s + (Number(t.amount) || 0), 0)
+                filtered.slice(0, chunkSize).reduce((s, t) => s + finiteAmount(t.amount), 0),
+                filtered.slice(chunkSize, chunkSize * 2).reduce((s, t) => s + finiteAmount(t.amount), 0),
+                filtered.slice(chunkSize * 2).reduce((s, t) => s + finiteAmount(t.amount), 0)
             ];
         }
 

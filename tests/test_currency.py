@@ -59,7 +59,10 @@ def test_storage_normalized_to_usd_base():
     assert "convertFromBase" in js
     assert "BASE_CURRENCY" in js
     assert '"/rates?base=' in js or "/rates?base=" in js
-    assert "await addTransaction({ description, amount, category, date });" in js
+    assert "await addTransaction({ description, amount, category, date" in js
+    # Provenance stored for audit of rate used at write time.
+    assert "rateUsed" in js
+    assert "ratesSource" in js
     assert "localStorage.getItem" in js and "ledger:currency" in js
     # Amount label/step syncs with currency.
     assert "amount-label" in js
